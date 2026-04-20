@@ -30,6 +30,8 @@ if not exist "models\model_bundle.pkl" (
         pause
         exit /b 1
     )
+    echo  [STEP 2.5/3] Cleaning and deduplicating college names...
+    venv\Scripts\python src\clean_data.py
 ) else (
     echo  [OK] ML model found: models\model_bundle.pkl
 )
