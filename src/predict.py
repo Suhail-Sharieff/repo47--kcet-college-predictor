@@ -34,6 +34,12 @@ def load_assets():
     return summary, colleges, branches, categories, bundle
 
 
+@lru_cache(maxsize=1)
+def load_cutoffs():
+    """Load the raw cutoffs DataFrame once and cache in memory, silencing mixed-type warnings."""
+    return pd.read_csv(DATA_DIR / 'cutoffs.csv', low_memory=False)
+
+
 def admission_confidence(user_rank, mean_cutoff, std_cutoff, predicted_2026):
     """
     Returns a confidence label: 'Safe', 'Moderate', 'Ambitious', 'Reach'
@@ -114,40 +120,41 @@ def predict(user_rank: int, category: str, branch_filter: list = None,
     return results
 
 
+@lru_cache(maxsize=1024)
 def get_trends(college_code: str, branch: str, category: str) -> dict:
     """
     Return year-wise cutoff trend for a specific college+branch+category.
     Reads the raw CSV and matches by branch name (case-insensitive).
     """
-    df = pd.read_csv(DATA_DIR / 'cutoffs.csv')
+    df = load_cutoffs()
 
-    mask = (
-        (df['college_code'].str.upper() == college_code.upper()) &
-        (df['category'] == category) &
-        (df['branch_name'].str.upper() == branch.upper())
-    )
-    subset = df[mask].copy()
-
-    # If no exact match on branch_name, try matching the summary branch name
-    if subset.empty:
-        mask2 = (
-            (df['college_code'].str.upper() == college_code.upper()) &
-            (df['category'] == category)
-        )
-        subset2 = df[mask2].copy()
-        # Fuzzy: find any row whose branch_name is contained in the query branch
-        branch_upper = branch.upper()
-        subset = subset2[
-            subset2['branch_name'].str.upper().apply(
-                lambda n: n in branch_upper or branch_upper in n
-            )
-        ]
+    # Filter by college and category first (extremely fast, reduces rows from 300k to ~100)
+    subset = df[
+        (df['college_code'] == college_code.upper()) &
+        (df['category'] == category)
+    ].copy()
 
     if subset.empty:
         return {}
 
+    # Exact branch name match (case-insensitive) on the small subset
+    mask = subset['branch_name'].str.upper() == branch.upper()
+    final_subset = subset[mask]
+
+    # If no exact match on branch_name, try fuzzy matching on the small subset
+    if final_subset.empty:
+        branch_upper = branch.upper()
+        final_subset = subset[
+            subset['branch_name'].str.upper().apply(
+                lambda n: n in branch_upper or branch_upper in n
+            )
+        ]
+
+    if final_subset.empty:
+        return {}
+
     # Group by year, take min cutoff across rounds (round 1 most competitive)
-    trend = subset.groupby('year')['cutoff_rank'].min().reset_index()
+    trend = final_subset.groupby('year')['cutoff_rank'].min().reset_index()
     return {int(r['year']): int(r['cutoff_rank']) for _, r in trend.iterrows()}
 
 
