@@ -138,14 +138,14 @@ def get_trends(college_code: str, branch: str, category: str) -> dict:
         return {}
 
     # Exact branch name match (case-insensitive) on the small subset
-    mask = subset['branch_name'].str.upper() == branch.upper()
+    mask = subset['branch_canonical'].str.upper() == branch.upper()
     final_subset = subset[mask]
 
-    # If no exact match on branch_name, try fuzzy matching on the small subset
+    # If no exact match on branch_canonical, try fuzzy matching on the small subset
     if final_subset.empty:
         branch_upper = branch.upper()
         final_subset = subset[
-            subset['branch_name'].str.upper().apply(
+            subset['branch_canonical'].str.upper().apply(
                 lambda n: n in branch_upper or branch_upper in n
             )
         ]
